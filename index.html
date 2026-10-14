@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#101813">
+  <meta name="description" content="跑步间歇训练计时器，支持跑走交替、循环计数、语音和提示音。">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="间歇跑">
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="apple-touch-icon" href="./icons/icon-192.png">
+  <link rel="icon" href="./icons/icon-192.png" type="image/png">
+  <link rel="stylesheet" href="./styles.css">
+  <title>间歇跑 · 训练计时器</title>
+</head>
+<body>
+  <main class="app-shell">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">RUN / WALK INTERVALS</p>
+        <h1>间歇跑</h1>
+      </div>
+      <span id="statusPill" class="status-pill">准备就绪</span>
+    </header>
+
+    <section class="panel plan-panel" aria-labelledby="planHeading">
+      <div class="section-heading">
+        <h2 id="planHeading">训练计划</h2>
+        <span class="subtle">选择预设或自定义</span>
+      </div>
+      <label class="field-label" for="planSelect">训练项目</label>
+      <select id="planSelect" class="control">
+        <option value="week1">第 1 周｜跑 3 分 + 走 1 分 × 4 组</option>
+        <option value="week2">第 2 周｜跑 4 分 + 走 1 分 × 4 组，末组加跑 1 分</option>
+        <option value="week3">第 3 周｜跑 6 分 + 走 1 分 × 3 组</option>
+        <option value="week4a">第 4 周｜连续慢跑 2.2 km</option>
+        <option value="week4b">第 4 周｜慢跑 2.6 km（最多 1 次 30 秒慢走）</option>
+        <option value="week4c">第 4 周｜挑战连续跑 3 km</option>
+        <option value="custom">自定义间歇</option>
+      </select>
+      <p id="planDescription" class="plan-description">先慢跑 3 分钟，再步行 1 分钟，共 4 组。</p>
+    </section>
+
+    <section class="timer-card" aria-live="polite">
+      <div class="timer-card-top">
+        <span id="phaseTag" class="phase-tag">READY</span>
+        <span id="roundText" class="round-text">等待开始</span>
+      </div>
+      <div id="timerDisplay" class="timer-display">03:00</div>
+      <div id="phaseTitle" class="phase-title">准备开始训练</div>
+      <p id="timerHint" class="timer-hint">点击开始后，计时会自动切换阶段</p>
+      <div class="progress-track" role="progressbar" aria-label="训练进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+        <div id="progressBar" class="progress-fill"></div>
+      </div>
+      <div class="progress-labels">
+        <span id="elapsedText">已用时 00:00</span>
+        <span id="totalText">总时长 15:00</span>
+      </div>
+      <div class="controls">
+        <button id="startBtn" class="button button-primary">开始训练</button>
+        <button id="pauseBtn" class="button button-secondary" disabled>暂停</button>
+        <button id="skipBtn" class="button button-secondary" disabled>跳过本段</button>
+        <button id="stopBtn" class="button button-danger" disabled>结束训练</button>
+      </div>
+    </section>
+
+    <section id="settingsPanel" class="panel settings-panel" aria-labelledby="settingsHeading">
+      <div class="section-heading">
+        <h2 id="settingsHeading">自定义间歇</h2>
+        <span class="subtle">仅影响自定义方案</span>
+      </div>
+      <div class="settings-grid">
+        <label class="setting-field">
+          <span>跑步（分钟）</span>
+          <input id="runMinutes" class="control" type="number" min="1" max="60" step="1" value="3" inputmode="numeric">
+        </label>
+        <label class="setting-field">
+          <span>步行（秒）</span>
+          <input id="walkSeconds" class="control" type="number" min="0" max="900" step="15" value="60" inputmode="numeric">
+        </label>
+        <label class="setting-field">
+          <span>循环组数</span>
+          <input id="rounds" class="control" type="number" min="1" max="30" step="1" value="4" inputmode="numeric">
+        </label>
+        <label class="setting-field">
+          <span>末组额外跑（秒）</span>
+          <input id="extraSeconds" class="control" type="number" min="0" max="900" step="15" value="0" inputmode="numeric">
+        </label>
+      </div>
+      <button id="applyCustomBtn" class="button button-secondary button-full">应用自定义方案</button>
+      <div class="toggle-row">
+        <label for="soundToggle">阶段提示音</label>
+        <input id="soundToggle" type="checkbox" checked>
+      </div>
+      <div class="toggle-row">
+        <label for="voiceToggle">中文语音播报</label>
+        <input id="voiceToggle" type="checkbox" checked>
+      </div>
+      <p class="microcopy">语音和提示音需要在你点击开始后启用。请先在安全环境完成测试；不要在跑步时频繁低头操作手机。</p>
+    </section>
+
+    <section class="panel notes-panel">
+      <h2>使用提醒</h2>
+      <p>每次训练前先热身，训练结束后拉伸。此工具只负责计时，不负责判断身体是否适合继续训练。</p>
+      <p class="warning-copy">iPhone 上的主屏幕网页应用在锁屏或切到后台后，计时和声音不保证持续运行。第一版训练时请保持页面在前台；需要锁屏稳定播报时，应升级为原生 App。</p>
+    </section>
+    <footer class="footer">本地保存设置 · 无需账号 · 无需上传训练数据</footer>
+  </main>
+  <script src="./app.js" defer></script>
+</body>
+</html>

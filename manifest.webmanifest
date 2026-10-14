@@ -1,0 +1,17 @@
+{
+  "id": "./",
+  "name": "间歇跑训练计时器",
+  "short_name": "间歇跑",
+  "description": "支持跑走交替、循环计数和提示音的跑步训练计时器。",
+  "lang": "zh-CN",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#101813",
+  "theme_color": "#101813",
+  "icons": [
+    { "src": "./icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "./icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}
