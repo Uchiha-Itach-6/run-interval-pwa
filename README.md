@@ -10,6 +10,7 @@
 - 自动切换跑步/步行阶段、进度条、暂停/继续、跳过、结束。
 - 提示音、中文语音（取决于设备和浏览器支持）。
 - localStorage 保存预设和设置；Service Worker 缓存静态资源，支持加载过后的离线打开。
+- 发现新版本时底部提示“刷新更新”；训练进行中不提示、不自动刷新，避免中断训练。
 
 ## 本地运行（Windows）
 
@@ -19,6 +20,8 @@
 4. 在扩展商店安装 `Live Server`。
 5. 右键 `index.html`，选择 **Open with Live Server**。
 6. 浏览器打开后测试计时、暂停、继续、跳过和提示音。
+7. （可选）运行核心逻辑回归测试，需要本机安装 Node.js。在 PowerShell 依次执行：
+   `node tests/h1-custom-persistence.test.js`、`node tests/h2-sw-update.test.js`、`node tests/h2-update-prompt.test.js`，全部显示“通过 / 0 失败”即为正常。
 
 不要直接双击 `index.html` 用 `file://` 测试 PWA：Service Worker 需要 HTTPS 或 localhost 环境。
 
@@ -33,6 +36,20 @@
 7. 后续修改文件并提交到 `main`，Pages 会自动重新部署。
 
 此项目使用相对路径，适用于 `https://用户名.github.io/仓库名/` 形式的网址。
+
+## 发布新版本（每次改代码后必做）
+
+1. 修改 `sw.js` 顶部的 `VERSION`，在现有版本号上加一（例如 `v2` 改为 `v3`）。
+   版本号用于隔离新旧缓存：只改代码不改版本号，用户可能继续使用旧缓存里的旧文件。
+2. 提交并推送到 `main` 分支，等待 GitHub Pages 自动重新部署（通常 1–2 分钟）。
+3. 验证用户确实拿到了新版本：
+   - 打开已部署网址，按 `F12` → **Application（应用程序）** → **Service Workers**，确认出现新的 Service Worker；勾选 **Update on reload** 再刷新可强制检查更新。
+   - 在 **Console（控制台）** 执行 `caches.keys()`，应只看到当前版本名（如 `run-interval-pwa-v3`），旧版本名已自动清理。
+   - 在线重新访问时，页面底部出现“发现新版本 / 刷新更新”横幅，点击后才会重载并启用新版本；训练进行中不会出现横幅、不会自动刷新，训练结束后才会提示，避免丢失训练状态。
+   - 离线验证：`F12` → **Network（网络）** 勾选 **Offline** 后刷新页面，已缓存的应用仍能打开（首次离线前至少成功在线加载过一次）。
+4. 缓存策略：HTML、`app.js`、`styles.css`、`manifest.webmanifest` 走“网络优先”（在线即最新，离线用缓存）；图标走“缓存优先”。Service Worker 只在本版本缓存内查找资源，不会跨旧缓存命中，避免新旧文件混用。
+
+注意：GitHub Pages 对静态资源有约 10 分钟的 HTTP 缓存，Service Worker 的更新检测可能因此略有延迟，属正常现象。
 
 ## 添加到 iPhone 主屏幕
 
@@ -67,9 +84,13 @@ run-interval-pwa/
 ├─ styles.css              手机优先的响应式样式
 ├─ app.js                  计划、计时状态与交互逻辑
 ├─ manifest.webmanifest    PWA 名称、图标与启动方式
-├─ sw.js                   离线缓存
+├─ sw.js                   离线缓存与版本更新策略（发布前必须改 VERSION）
 ├─ icons/
 │  ├─ icon-192.png
 │  └─ icon-512.png
+├─ tests/                  核心逻辑回归测试（Node.js，无第三方依赖）
+│  ├─ h1-custom-persistence.test.js
+│  ├─ h2-sw-update.test.js
+│  └─ h2-update-prompt.test.js
 └─ README.md
 ```

@@ -8,7 +8,8 @@ const els = {
   progressTrack: document.querySelector('[role="progressbar"]'), elapsedText: $('elapsedText'), totalText: $('totalText'),
   startBtn: $('startBtn'), pauseBtn: $('pauseBtn'), skipBtn: $('skipBtn'), stopBtn: $('stopBtn'),
   runMinutes: $('runMinutes'), walkSeconds: $('walkSeconds'), rounds: $('rounds'), extraSeconds: $('extraSeconds'),
-  applyCustomBtn: $('applyCustomBtn'), soundToggle: $('soundToggle'), voiceToggle: $('voiceToggle')
+  applyCustomBtn: $('applyCustomBtn'), soundToggle: $('soundToggle'), voiceToggle: $('voiceToggle'),
+  updateBanner: $('updateBanner'), updateBtn: $('updateBtn')
 };
 
 const PRESETS = {
@@ -41,6 +42,7 @@ let ticker = null;
 let audioContext = null;
 let wakeLock = null;
 let lastCueSecond = null;
+let updateReady = false; // 是否有新版本等待用户刷新（提前声明：初始化渲染就会读取）
 
 function clampInt(value, min, max, fallback) {
   const n = Number.parseInt(value, 10);
@@ -95,10 +97,34 @@ function loadSettings() {
     els.soundToggle.checked = saved.sound !== false;
     els.voiceToggle.checked = saved.voice !== false;
     if (PRESETS[saved.selectedId]) {
-      selectedPlan = { ...PRESETS[saved.selectedId] };
+      if (saved.selectedId === 'custom') {
+        // 自定义方案：用刚恢复的表单值重建，避免被默认预设值覆盖
+        selectedPlan = readCustomForm();
+      } else {
+        selectedPlan = { ...PRESETS[saved.selectedId] };
+      }
       els.planSelect.value = saved.selectedId;
     }
   } catch (error) { console.warn('无法读取本地设置', error); }
+}
+function saveCustomParams(plan) {
+  // 单独保存用户应用过的自定义参数，供切回自定义方案时恢复
+  try {
+    localStorage.setItem(STORAGE_KEY + ':custom', JSON.stringify({
+      runMinutes: String(Math.max(1, Math.round(plan.runSec / 60))),
+      walkSeconds: String(plan.walkSec),
+      rounds: String(plan.rounds),
+      extraSeconds: String(plan.extraSec || 0)
+    }));
+  } catch (error) { console.warn('无法保存自定义参数', error); }
+}
+function loadCustomParams() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY + ':custom');
+    if (!raw) return null;
+    const saved = JSON.parse(raw);
+    return (saved && typeof saved === 'object') ? saved : null;
+  } catch (error) { return null; }
 }
 function setFormFromPlan(plan) {
   if (plan.mode !== 'interval') return;
@@ -169,6 +195,7 @@ function updateButtons() {
   document.body.classList.toggle('is-running', state === 'running');
   els.statusPill.className = `status-pill ${state === 'running' ? 'running' : state === 'paused' ? 'paused' : state === 'completed' ? 'completed' : ''}`;
   els.statusPill.textContent = state === 'running' ? '训练中' : state === 'paused' ? '已暂停' : state === 'completed' ? '已完成' : '准备就绪';
+  maybeShowUpdateBanner(); // 训练结束时如发现新版本，此时才提示
 }
 function render() {
   updateButtons();
@@ -387,8 +414,20 @@ function skipPhase() {
   render();
 }
 function choosePlan(id) {
-  selectedPlan = id === 'custom' ? readCustomForm() : { ...PRESETS[id] };
-  if (selectedPlan.mode === 'interval') setFormFromPlan(selectedPlan);
+  if (id === 'custom') {
+    // 切回自定义：恢复上次保存的自定义参数，避免被预设值覆盖
+    const savedCustom = loadCustomParams();
+    if (savedCustom) {
+      els.runMinutes.value = savedCustom.runMinutes ?? '3';
+      els.walkSeconds.value = savedCustom.walkSeconds ?? '60';
+      els.rounds.value = savedCustom.rounds ?? '4';
+      els.extraSeconds.value = savedCustom.extraSeconds ?? '0';
+    }
+    selectedPlan = readCustomForm();
+  } else {
+    selectedPlan = { ...PRESETS[id] };
+    if (selectedPlan.mode === 'interval') setFormFromPlan(selectedPlan);
+  }
   updatePlanDescription();
   saveSettings();
 }
@@ -403,6 +442,7 @@ els.planSelect.addEventListener('change', () => {
 els.applyCustomBtn.addEventListener('click', () => {
   if (state === 'running' || state === 'paused') return;
   selectedPlan = readCustomForm();
+  saveCustomParams(selectedPlan);
   els.planSelect.value = 'custom';
   updatePlanDescription();
   saveSettings();
@@ -426,14 +466,36 @@ document.addEventListener('visibilitychange', () => {
 window.addEventListener('pagehide', () => { saveSettings(); releaseWakeLock(); });
 
 loadSettings();
-if (selectedPlan.mode === 'interval') setFormFromPlan(selectedPlan);
+if (selectedPlan.mode === 'interval' && selectedPlan.id !== 'custom') setFormFromPlan(selectedPlan);
 if (els.planSelect.value !== selectedPlan.id) els.planSelect.value = selectedPlan.id;
 updatePlanDescription();
 phases = buildPhases(selectedPlan);
 render();
 
+// —— 新版本更新提示 ——
+// 原则：发现新版本只提示，绝不自动刷新；训练中/暂停不打扰，ready/completed 才显示横幅。
+function showUpdateBanner() {
+  if (els.updateBanner) els.updateBanner.hidden = false;
+}
+function maybeShowUpdateBanner() {
+  if (updateReady && (state === 'ready' || state === 'completed')) showUpdateBanner();
+}
+els.updateBtn.addEventListener('click', () => { window.location.reload(); });
+
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./sw.js').catch((error) => console.warn('Service worker 注册失败', error));
+    navigator.serviceWorker.register('./sw.js').then((registration) => {
+      // 新版本安装完成、且当前页面正由旧版本接管时，才提示刷新
+      registration.addEventListener('updatefound', () => {
+        const installing = registration.installing;
+        if (!installing) return;
+        installing.addEventListener('statechange', () => {
+          if (installing.state === 'installed' && navigator.serviceWorker.controller) {
+            updateReady = true;
+            maybeShowUpdateBanner();
+          }
+        });
+      });
+    }).catch((error) => console.warn('Service worker 注册失败', error));
   });
 }
