@@ -76,7 +76,20 @@ function makeCachesStub(fetchFn) {
     if (!stores.has(name)) stores.set(name, new Map());
     const map = stores.get(name);
     return {
-      async addAll(urls) { for (const u of urls) map.set(new URL(u, SW_URL).href, await fetchFn(u)); },
+      async addAll(urls) {
+        // 按规范实现：重复 URL 抛 InvalidStateError（真实浏览器行为，曾导致 install 失败）
+        const seen = new Set();
+        for (const u of urls) {
+          const k = new URL(u, SW_URL).href;
+          if (seen.has(k)) {
+            const err = new Error('Cache.addAll(): duplicate requests (' + k + ')');
+            err.name = 'InvalidStateError';
+            throw err;
+          }
+          seen.add(k);
+        }
+        for (const u of urls) map.set(new URL(u, SW_URL).href, await fetchFn(u));
+      },
       async put(req, res) { map.set(keyOf(req), res); },
       async match(req) { const k = keyOf(req); return map.has(k) ? map.get(k) : null; },
       async keys() { return [...map.keys()]; }
@@ -116,6 +129,7 @@ function bootSw(server, cachesStub) {
   sandbox.__fire = (t, ev) => (listeners[t] || []).forEach((fn) => fn(ev));
   vm.createContext(sandbox);
   vm.runInContext(SW_SRC, sandbox, { filename: 'sw.js' });
+  vm.runInContext('__precacheUrls = PRECACHE_URLS; __cacheName = CACHE_NAME;', sandbox); // 顶层 const 可在同上下文后续脚本中读取（版本无关：bump 后测试无需改动）
   return sandbox;
 }
 
@@ -149,10 +163,18 @@ const sw = bootSw(server, cachesStub);
 await fire(sw, 'install', null);
 assert(sw.calls.skipWaiting === true, 'install 调用 skipWaiting（新 SW 尽快就绪）');
 {
-  const v2 = cachesStub._stores.get('run-interval-pwa-v2');
-  assert(Boolean(v2) && v2.size === 7, '当前版本缓存 run-interval-pwa-v2 含 7 个预缓存资源');
-  assert(v2.has(U.html) && v2.has(U.root) && v2.has(U.app) && v2.has(U.icon192), '首页/JS/图标等关键资源已预缓存');
+  const cur = cachesStub._stores.get(sw.__cacheName);
+  assert(Boolean(cur) && cur.size === 7, '当前版本缓存 ' + sw.__cacheName + ' 含 7 个预缓存资源');
+  assert(cur.has(U.html) && cur.has(U.root) && cur.has(U.app) && cur.has(U.icon192), '首页/JS/图标等关键资源已预缓存');
   assert(!(await cachesStub.keys()).includes('run-interval-pwa-v1'), '未产生旧版本名缓存');
+}
+{
+  const urls = sw.__precacheUrls;
+  assert(Array.isArray(urls) && urls.length === 7, 'PRECACHE_URLS 共 7 个资源');
+  assert(new Set(urls).size === urls.length, 'PRECACHE_URLS 中每个 URL 唯一（addAll 不会因重复请求抛 InvalidStateError）');
+  assert(urls.indexOf(U.html) !== -1 && urls.indexOf(U.root) !== -1, '首页两个键（./ 与 ./index.html）都在预缓存列表中');
+  assert(urls.indexOf(U.app) !== -1 && urls.indexOf(U.css) !== -1 && urls.indexOf(U.manifest) !== -1, 'JS/CSS/manifest 都在预缓存列表中');
+  assert(urls.indexOf(U.icon192) !== -1 && urls.indexOf(U.icon512) !== -1, '两个图标都在预缓存列表中');
 }
 
 // ---------- T2：在线导航 network-first，且两个首页键都更新 ----------
@@ -161,9 +183,9 @@ setFiles(server, 'B'); // 模拟部署了新版本
 {
   const res = await fire(sw, 'fetch', getReq(U.root, 'navigate'));
   assert(await res.text() === '<html>B</html>', '在线导航返回网络最新 HTML');
-  const v2 = cachesStub._stores.get('run-interval-pwa-v2');
-  assert(await v2.get(U.html).text() === '<html>B</html>', './index.html 缓存键同步更新为最新');
-  assert(await v2.get(U.root).text() === '<html>B</html>', '导航 URL 缓存键同步更新为最新');
+  const cur = cachesStub._stores.get(sw.__cacheName);
+  assert(await cur.get(U.html).text() === '<html>B</html>', './index.html 缓存键同步更新为最新');
+  assert(await cur.get(U.root).text() === '<html>B</html>', '导航 URL 缓存键同步更新为最新');
 }
 
 // ---------- T3：离线导航回退缓存 ----------
@@ -229,7 +251,7 @@ await fire(sw, 'activate', null);
 assert(sw.calls.claim === true, 'activate 调用 clientsClaim（尽快接管页面）');
 {
   const keys = await cachesStub.keys();
-  assert(keys.length === 1 && keys[0] === 'run-interval-pwa-v2', 'activate 后仅保留当前版本缓存');
+  assert(keys.length === 1 && keys[0] === sw.__cacheName, 'activate 后仅保留当前版本缓存');
 }
 
 // ---------- T9：非 GET / 跨域不接管 ----------

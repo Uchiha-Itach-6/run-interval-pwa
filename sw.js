@@ -12,7 +12,7 @@
  *   - activate 时删除其他版本的缓存；install 时 skipWaiting、activate 时 clientsClaim，
  *     让新 SW 尽快就绪，但页面是否重载由用户通过“刷新更新”横幅决定，训练中不打扰。
  */
-const VERSION = 'v2';
+const VERSION = 'v3';
 const CACHE_NAME = 'run-interval-pwa-' + VERSION;
 
 // 基于 sw.js 自身位置解析绝对 URL，天然兼容 GitHub Pages 子路径部署
@@ -25,13 +25,15 @@ const CORE_URLS = [
   here('./styles.css'),
   here('./manifest.webmanifest')
 ];
-const PRECACHE_URLS = [
+// 去重：CORE_URLS 已包含 SHELL_HTML，直接展开会重复；
+// Cache.addAll() 遇到重复请求会抛 InvalidStateError 导致 install 失败。
+const PRECACHE_URLS = [...new Set([
   SHELL_ROOT,
   SHELL_HTML,
   ...CORE_URLS,
   here('./icons/icon-192.png'),
   here('./icons/icon-512.png')
-];
+])];
 
 const isCoreAsset = (url) => CORE_URLS.indexOf(url.href) !== -1;
 const isCacheable = (response) => Boolean(response) && response.ok;
